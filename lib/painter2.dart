@@ -1,24 +1,23 @@
+// Updated library: draw a "point" by tapping on the screen. Store your painting by using MyPath
 library painter;
 
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui';
 
-import 'package:date_format/date_format.dart';
 import 'package:flutter/material.dart' as mat show Image;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart' hide Image;
-import 'dart:ui';
-import 'dart:async';
-import 'dart:typed_data';
 
 class Painter extends StatefulWidget {
   final PainterController painterController;
 
-  Painter(PainterController painterController)
-      : this.painterController = painterController,
-        super(key: ValueKey<PainterController>(painterController));
+  Painter(this.painterController)
+      : super(key: ValueKey<PainterController>(painterController));
 
   @override
-  _PainterState createState() => _PainterState();
+  State<Painter> createState() => _PainterState();
 }
 
 class _PainterState extends State<Painter> {
@@ -34,18 +33,23 @@ class _PainterState extends State<Painter> {
   Widget build(BuildContext context) {
     Widget child = CustomPaint(
       willChange: true,
-      painter: _PainterPainter(widget.painterController._pathHistory,
-          repaint: widget.painterController),
+      painter: _PainterPainter(
+        widget.painterController._pathHistory,
+        repaint: widget.painterController,
+      ),
     );
+
     child = ClipRect(child: child);
-    if (widget.painterController.backgroundImage == null) {
+
+    final bg = widget.painterController.backgroundImage;
+    if (bg == null) {
       child = RepaintBoundary(
         key: _globalKey,
         child: GestureDetector(
-          child: child,
           onPanStart: _onPanStart,
           onPanUpdate: _onPanUpdate,
           onPanEnd: _onPanEnd,
+          child: child,
         ),
       );
     } else {
@@ -55,34 +59,31 @@ class _PainterState extends State<Painter> {
           alignment: FractionalOffset.center,
           fit: StackFit.expand,
           children: <Widget>[
-            widget.painterController.backgroundImage,
+            bg,
             GestureDetector(
-              child: child,
               onPanStart: _onPanStart,
               onPanUpdate: _onPanUpdate,
               onPanEnd: _onPanEnd,
-            )
+              child: child,
+            ),
           ],
         ),
       );
     }
-    return Container(
-      child: child,
-      width: double.infinity,
-      height: double.infinity,
-    );
+
+    return SizedBox.expand(child: child);
   }
 
   void _onPanStart(DragStartDetails start) {
-    Offset pos = (context.findRenderObject() as RenderBox)
-        .globalToLocal(start.globalPosition);
+    final box = context.findRenderObject() as RenderBox;
+    final pos = box.globalToLocal(start.globalPosition);
     widget.painterController._pathHistory.add(pos);
     widget.painterController._notifyListeners();
   }
 
   void _onPanUpdate(DragUpdateDetails update) {
-    Offset pos = (context.findRenderObject() as RenderBox)
-        .globalToLocal(update.globalPosition);
+    final box = context.findRenderObject() as RenderBox;
+    final pos = box.globalToLocal(update.globalPosition);
     widget.painterController._pathHistory.updateCurrent(pos);
     widget.painterController._notifyListeners();
   }
@@ -96,7 +97,7 @@ class _PainterState extends State<Painter> {
 class _PainterPainter extends CustomPainter {
   final _PathHistory _path;
 
-  _PainterPainter(this._path, {Listenable repaint}) : super(repaint: repaint);
+  _PainterPainter(this._path, {Listenable? repaint}) : super(repaint: repaint);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -108,50 +109,47 @@ class _PainterPainter extends CustomPainter {
 }
 
 class _PathHistory {
-  List<MapEntry<Path, Paint>> _paths;
-  List<MapEntry<Path, Paint>> _undone;
-  Paint currentPaint;
-  Paint _backgroundPaint;
-  bool _inDrag;
-  double _width;
-  double _height;
-  double _startX; //start X with a tap
-  double _startY; //start Y with a tap
+  final List<MapEntry<Path, Paint>> _paths = <MapEntry<Path, Paint>>[];
+  final List<MapEntry<Path, Paint>> _undone = <MapEntry<Path, Paint>>[];
+
+  final Paint _backgroundPaint = Paint();
+
+  bool _inDrag = false;
+
+  // Canvas size is only known after first draw()
+  double _width = 0.0;
+  double _height = 0.0;
+
+  // Start coordinate for tap-to-point behavior
+  double _startX = 0.0;
+  double _startY = 0.0;
+
   bool _startFlag = false;
+
   bool _erase = false;
   double _eraseArea = 1.0;
+
   bool _pathFound = false;
-  List<PathPoints> _pathPoints;
-  List<PathPoints> _pathPointsUnDone;
-  MyPaths _myPaths;
-  bool _updated;
 
-  _PathHistory() {
-    _paths = List<MapEntry<Path, Paint>>();
-    _undone = List<MapEntry<Path, Paint>>();
-    _pathPoints = List<PathPoints>();
-    _pathPointsUnDone = List<PathPoints>();
-    _myPaths = MyPaths();
-    _inDrag = false;
-    _backgroundPaint = Paint();
-    _updated = false;
-  }
+  final List<PathPoints> _pathPoints = <PathPoints>[];
+  final List<PathPoints> _pathPointsUnDone = <PathPoints>[];
 
-  bool canUndo() => _paths.length > 0;
+  final MyPaths _myPaths = MyPaths();
+
+  bool _updated = false;
+
+  // Always set by controller via _updatePaint before drawing
+  late Paint currentPaint;
+
+  bool canUndo() => _paths.isNotEmpty;
 
   bool get erase => _erase;
-  set erase(bool e) {
-    _erase = e;
-  }
+  set erase(bool e) => _erase = e;
 
-  set eraseArea(double r) {
-    _eraseArea = r;
-  }
+  set eraseArea(double r) => _eraseArea = r;
 
   bool get updated => _updated;
-  set updated(bool u) {
-    _updated = u;
-  }
+  set updated(bool u) => _updated = u;
 
   void undo() {
     if (!_inDrag && canUndo()) {
@@ -160,7 +158,7 @@ class _PathHistory {
     }
   }
 
-  bool canRedo() => _undone.length > 0;
+  bool canRedo() => _undone.isNotEmpty;
 
   void redo() {
     if (!_inDrag && canRedo()) {
@@ -171,107 +169,110 @@ class _PathHistory {
 
   void clear() {
     if (!_inDrag) {
-        _paths.clear();
-        _undone.clear();
-        _pathPoints.clear();
-        _updated = false;
+      _paths.clear();
+      _undone.clear();
+      _pathPoints.clear();
+      _updated = false;
     }
   }
 
   void loadStartXY(PathPoints pathPoints) {
-    Path path = Path();
-    Paint paint = Paint();
-
-    paint.style = getPaintingStyle(pathPoints.paintingStyle);
-    paint.strokeWidth = pathPoints.lineThicknes;
-    paint.color = Color(pathPoints.lineColor);
+    final path = Path();
+    final paint = Paint()
+      ..style = getPaintingStyle(pathPoints.paintingStyle)
+      ..strokeWidth = pathPoints.lineThicknes
+      ..color = Color(pathPoints.lineColor);
 
     path.moveTo(pathPoints.startX, pathPoints.startY);
-
     _paths.add(MapEntry<Path, Paint>(path, paint));
   }
 
-  void load(int lineColor, double lineThicknes, double lineToX, double lineToY, bool singlePoint) {
+  void load(
+    int lineColor,
+    double lineThicknes,
+    double lineToX,
+    double lineToY,
+    bool singlePoint,
+  ) {
+    final loopPath = _paths.last.key;
 
-      Path loopPath = _paths.last.key;
-
-      if (!singlePoint) {
-          loopPath.lineTo(lineToX, lineToY);
-      } else {
-        loopPath.addOval(Rect.fromCircle(center: new Offset(lineToX, lineToY), radius: 1.0));
-      }
+    if (!singlePoint) {
+      loopPath.lineTo(lineToX, lineToY);
+    } else {
+      loopPath.addOval(
+        Rect.fromCircle(center: Offset(lineToX, lineToY), radius: 1.0),
+      );
+    }
   }
 
   PaintingStyle getPaintingStyle(String paintingStyleAsString) {
-    for (PaintingStyle element in PaintingStyle.values) {
+    for (final element in PaintingStyle.values) {
       if (element.toString() == paintingStyleAsString) {
         return element;
       }
     }
-    return null;
+    // sensible default (old code returned null)
+    return PaintingStyle.stroke;
   }
 
   Color get backgroundColor => _backgroundPaint.color;
-  set backgroundColor(color) => _backgroundPaint.color = color;
+  set backgroundColor(Color color) => _backgroundPaint.color = color;
 
   void add(Offset startPoint) {
-    if (!_inDrag) {
-      _inDrag = true;
-      _startFlag = true;
-      _startX = startPoint.dx;
-      _startY = startPoint.dy;
+    if (_inDrag) return;
 
-      if(!_erase) {
-        PathPoints pathPoints = PathPoints();
-        pathPoints.startX = startPoint.dx;
-        pathPoints.startY = startPoint.dy;
-        pathPoints.lineToX = new List<double>();
-        pathPoints.lineToY = new List<double>();
-        pathPoints.lineThicknes = currentPaint.strokeWidth;
-        pathPoints.lineColor = currentPaint.color.value;
-        pathPoints.paintingStyle = currentPaint.style.toString();
-        pathPoints.singlePoint = true;
-        _pathPoints.add(pathPoints);
+    _inDrag = true;
+    _startFlag = true;
+    _startX = startPoint.dx;
+    _startY = startPoint.dy;
 
-        Path path = Path();
-        path.moveTo(startPoint.dx, startPoint.dy);
+    if (_erase) return;
 
-        _paths.add(MapEntry<Path, Paint>(path, currentPaint));
-      }
-    }
+    final pathPoints = PathPoints(
+      startX: startPoint.dx,
+      startY: startPoint.dy,
+      lineToX: <double>[],
+      lineToY: <double>[],
+      lineThicknes: currentPaint.strokeWidth,
+      lineColor: currentPaint.color.value,
+      paintingStyle: currentPaint.style.toString(),
+      singlePoint: true,
+    );
+    _pathPoints.add(pathPoints);
+
+    final path = Path()..moveTo(startPoint.dx, startPoint.dy);
+    _paths.add(MapEntry<Path, Paint>(path, currentPaint));
   }
 
   void updateCurrent(Offset nextPoint) {
-    if (_inDrag) {
-      _pathFound = false;
-      if (!_erase) {
-        Path path = _paths.last.key;
-        path.lineTo(nextPoint.dx, nextPoint.dy);
+    if (!_inDrag) return;
 
-        print("dx :"+nextPoint.dx.toString());
-        print("dy :"+nextPoint.dy.toString());
+    _pathFound = false;
 
-        PathPoints pathPoints = _pathPoints.last;
-        pathPoints.lineToX.add(nextPoint.dx);
-        pathPoints.lineToY.add(nextPoint.dy);
-        pathPoints.singlePoint = false;
+    if (!_erase) {
+      final path = _paths.last.key;
+      path.lineTo(nextPoint.dx, nextPoint.dy);
 
-        _startFlag = false;
-        _updated = true;
-      } else {
-        erasePath(nextPoint.dx, nextPoint.dy);
-        _startFlag = false;
-      }
+      final pathPoints = _pathPoints.last;
+      pathPoints.lineToX.add(nextPoint.dx);
+      pathPoints.lineToY.add(nextPoint.dy);
+      pathPoints.singlePoint = false;
+
+      _startFlag = false;
+      _updated = true;
+    } else {
+      erasePath(nextPoint.dx, nextPoint.dy);
+      _startFlag = false;
     }
   }
 
   void erasePath(double dx, double dy) {
-    for (int i=0; i<_paths.length; i++) {
+    for (int i = 0; i < _paths.length; i++) {
       _pathFound = false;
+
       for (double x = dx - _eraseArea; x <= dx + _eraseArea; x++) {
         for (double y = dy - _eraseArea; y <= dy + _eraseArea; y++) {
-          if (_paths[i].key.contains(new Offset(x, y)))
-          {
+          if (_paths[i].key.contains(Offset(x, y))) {
             _pathPointsUnDone.add(_pathPoints.removeAt(i));
             _undone.add(_paths.removeAt(i));
             i--;
@@ -280,24 +281,28 @@ class _PathHistory {
             break;
           }
         }
-        if (_pathFound) {
-          break;
-        }
+        if (_pathFound) break;
       }
     }
   }
 
   void endCurrent() {
     _inDrag = false;
-    Path path = _paths.last.key;
-    if ((_startFlag) && (!_erase)) { //if it was just a tap, draw a point and reset a flag
-      print("StartX: $_startX");
-      print("StartY: $_startY");
-      path.addOval(Rect.fromCircle(center: new Offset(_startX, _startY), radius: 1.0));
+
+    if (_paths.isEmpty) return; // safety guard
+
+    final path = _paths.last.key;
+
+    // if it was just a tap, draw a point and reset a flag
+    if (_startFlag && !_erase) {
+      path.addOval(
+        Rect.fromCircle(center: Offset(_startX, _startY), radius: 1.0),
+      );
       _updated = true;
       _startFlag = false;
     }
-    if ((_startFlag) && (_erase)) {
+
+    if (_startFlag && _erase) {
       erasePath(_startX, _startY);
       _startFlag = false;
     }
@@ -306,26 +311,35 @@ class _PathHistory {
   void draw(Canvas canvas, Size size) {
     _width = size.width;
     _height = size.height;
+
     canvas.drawRect(
-        Rect.fromLTWH(0.0, 0.0, size.width, size.height), _backgroundPaint);
-    for (MapEntry<Path, Paint> path in _paths) {
+      Rect.fromLTWH(0.0, 0.0, size.width, size.height),
+      _backgroundPaint,
+    );
+
+    for (final path in _paths) {
       canvas.drawPath(path.key, path.value);
     }
   }
 }
 
 class PainterController extends ChangeNotifier {
-  Color _drawColor = Color.fromARGB(255, 0, 0, 0);
-  Color _backgroundColor = Color.fromARGB(255, 255, 255, 255);
-  mat.Image _bgimage;
+  Color _drawColor = const Color.fromARGB(255, 0, 0, 0);
+  Color _backgroundColor = const Color.fromARGB(255, 255, 255, 255);
+
+  mat.Image? _bgimage;
 
   double _thickness = 1.0;
   double _erasethickness = 1.0;
-  _PathHistory _pathHistory;
-  GlobalKey _globalKey;
+
+  final _PathHistory _pathHistory = _PathHistory();
+
+  // Set by Painter widget in initState
+  GlobalKey? _globalKey;
 
   PainterController() {
-    _pathHistory = _PathHistory();
+    // Ensure currentPaint is initialized immediately
+    _updatePaint();
   }
 
   Color get drawColor => _drawColor;
@@ -340,8 +354,8 @@ class PainterController extends ChangeNotifier {
     _updatePaint();
   }
 
-  mat.Image get backgroundImage => _bgimage;
-  set backgroundImage(mat.Image image) {
+  mat.Image? get backgroundImage => _bgimage;
+  set backgroundImage(mat.Image? image) {
     _bgimage = image;
     _updatePaint();
   }
@@ -359,21 +373,17 @@ class PainterController extends ChangeNotifier {
     _updatePaint();
   }
 
-  bool get eraser => _pathHistory.erase; //setter / getter for eraser
+  bool get eraser => _pathHistory.erase;
   set eraser(bool e) {
     _pathHistory.erase = e;
-    _pathHistory._eraseArea =  _erasethickness;
+    _pathHistory._eraseArea = _erasethickness;
     _updatePaint();
   }
 
   bool get updated => _pathHistory.updated;
-  set updated(bool u) {
-    _pathHistory.updated = u;
-  }
+  set updated(bool u) => _pathHistory.updated = u;
 
-  List<PathPoints> getPathPoints() {
-    return _pathHistory._pathPoints;
-  }
+  List<PathPoints> getPathPoints() => _pathHistory._pathPoints;
 
   MyPaths getMyPaths() {
     _pathHistory._myPaths.pathPoints = getPathPoints();
@@ -383,29 +393,43 @@ class PainterController extends ChangeNotifier {
     return _pathHistory._myPaths;
   }
 
-
   void setPathPoints(List<PathPoints> setPoints) {
     _pathHistory.clear();
     notifyListeners();
 
-    for (PathPoints item in setPoints) {
+    for (final item in setPoints) {
       _pathHistory.loadStartXY(item);
       notifyListeners();
 
       if (!item.singlePoint) {
-          for (int i = 0; i<item.lineToX.length; i++) {
-            _pathHistory.load(item.lineColor, item.lineThicknes, item.lineToX[i], item.lineToY[i], item.singlePoint);
-          }
-       } else {
-           _pathHistory.load(item.lineColor, item.lineThicknes, item.startX, item.startY, item.singlePoint);
-       }
+        for (int i = 0; i < item.lineToX.length; i++) {
+          _pathHistory.load(
+            item.lineColor,
+            item.lineThicknes,
+            item.lineToX[i],
+            item.lineToY[i],
+            item.singlePoint,
+          );
+        }
+      } else {
+        _pathHistory.load(
+          item.lineColor,
+          item.lineThicknes,
+          item.startX,
+          item.startY,
+          item.singlePoint,
+        );
+      }
+
       notifyListeners();
     }
-    _pathHistory._pathPoints = setPoints;
+
+    _pathHistory._pathPoints
+      ..clear()
+      ..addAll(setPoints);
   }
 
   void loadPaths(MyPaths myPaths) {
-    //_backgroundColor = Color(myPaths.backGroundColor);
     backgroundColor = Color(myPaths.backGroundColor);
     _updatePaint();
     setPathPoints(myPaths.pathPoints);
@@ -413,16 +437,19 @@ class PainterController extends ChangeNotifier {
   }
 
   void _updatePaint() {
-    Paint paint = Paint();
-    paint.color = drawColor;
-    paint.style = PaintingStyle.stroke;
-    paint.strokeWidth = thickness;
+    final paint = Paint()
+      ..color = drawColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = thickness;
+
     _pathHistory.currentPaint = paint;
+
     if (_bgimage != null) {
-      _pathHistory.backgroundColor = Color(0x00000000);
+      _pathHistory.backgroundColor = const Color(0x00000000);
     } else {
       _pathHistory.backgroundColor = _backgroundColor;
     }
+
     notifyListeners();
   }
 
@@ -439,9 +466,7 @@ class PainterController extends ChangeNotifier {
   bool get canUndo => _pathHistory.canUndo();
   bool get canRedo => _pathHistory.canRedo();
 
-  void _notifyListeners() {
-    notifyListeners();
-  }
+  void _notifyListeners() => notifyListeners();
 
   void clear() {
     _pathHistory.clear();
@@ -449,11 +474,24 @@ class PainterController extends ChangeNotifier {
   }
 
   Future<Uint8List> exportAsPNGBytes() async {
-    //TODO: check boundary on null!
-    RenderRepaintBoundary boundary =
-        _globalKey.currentContext.findRenderObject();
-    Image image = await boundary.toImage();
-    ByteData byteData = await image.toByteData(format: ImageByteFormat.png);
+    final key = _globalKey;
+    final context = key?.currentContext;
+    final ro = context?.findRenderObject();
+    final boundary = ro is RenderRepaintBoundary ? ro : null;
+
+    if (boundary == null) {
+      throw StateError(
+        'RepaintBoundary not ready. Make sure Painter is mounted before exporting.',
+      );
+    }
+
+    final image = await boundary.toImage();
+    final byteData = await image.toByteData(format: ImageByteFormat.png);
+
+    if (byteData == null) {
+      throw StateError('Failed to encode image as PNG.');
+    }
+
     return byteData.buffer.asUint8List();
   }
 }
@@ -461,78 +499,96 @@ class PainterController extends ChangeNotifier {
 class PathPoints {
   double startX;
   double startY;
-  List<double> lineToX = new List<double>();
-  List<double> lineToY = new List<double>();
+  List<double> lineToX;
+  List<double> lineToY;
   String paintingStyle;
   double lineThicknes;
   int lineColor;
-  bool singlePoint = true;
+  bool singlePoint;
 
-  PathPoints({this.startX, this.startY, this.lineToX, this.lineToY, this.paintingStyle, this.lineThicknes, this.lineColor, this.singlePoint});
+  PathPoints({
+    required this.startX,
+    required this.startY,
+    List<double>? lineToX,
+    List<double>? lineToY,
+    required this.paintingStyle,
+    required this.lineThicknes,
+    required this.lineColor,
+    this.singlePoint = true,
+  })  : lineToX = lineToX ?? <double>[],
+        lineToY = lineToY ?? <double>[];
 
-  Map<String, dynamic> toJson() =>
-      {
-        'startX' : startX,
-        'startY' : startY,
-        'lineToX' : lineToX,
-        'lineToY' : lineToY,
-        'paintingStyle' : paintingStyle,
-        'lineThicknes' : lineThicknes,
-        'lineColor' : lineColor,
-        'singlePoint' : singlePoint,
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'startX': startX,
+        'startY': startY,
+        'lineToX': lineToX,
+        'lineToY': lineToY,
+        'paintingStyle': paintingStyle,
+        'lineThicknes': lineThicknes,
+        'lineColor': lineColor,
+        'singlePoint': singlePoint,
       };
 
   factory PathPoints.fromJson(Map<String, dynamic> parsedJson) {
-    var x = jsonDecode(parsedJson['lineToX'].toString());
-    if (x==null) {x = new List<String>();};
+    // Support both: list already decoded OR stringified list
+    final dynamic rawX = parsedJson['lineToX'];
+    final dynamic rawY = parsedJson['lineToY'];
 
-    var y = jsonDecode(parsedJson['lineToY'].toString());
-    if (y==null) {y = new List<String>();};
+    final List<dynamic> decodedX =
+        rawX is String ? (jsonDecode(rawX) as List<dynamic>) : (rawX as List<dynamic>? ?? <dynamic>[]);
+    final List<dynamic> decodedY =
+        rawY is String ? (jsonDecode(rawY) as List<dynamic>) : (rawY as List<dynamic>? ?? <dynamic>[]);
 
     return PathPoints(
-        startX: parsedJson["startX"],
-        startY: parsedJson["startY"],
-        lineToX : x.cast<double>(),
-        lineToY : y.cast<double>(),
-        paintingStyle : parsedJson["paintingStyle"],
-        lineThicknes : parsedJson["lineThicknes"],
-        lineColor : parsedJson["lineColor"],
-        singlePoint : parsedJson["singlePoint"],
+      startX: (parsedJson['startX'] as num).toDouble(),
+      startY: (parsedJson['startY'] as num).toDouble(),
+      lineToX: decodedX.map((e) => (e as num).toDouble()).toList(),
+      lineToY: decodedY.map((e) => (e as num).toDouble()).toList(),
+      paintingStyle: parsedJson['paintingStyle'] as String,
+      lineThicknes: (parsedJson['lineThicknes'] as num).toDouble(),
+      lineColor: parsedJson['lineColor'] as int,
+      singlePoint: parsedJson['singlePoint'] as bool? ?? true,
     );
   }
 }
 
 class MyPaths {
-  double width; //canvas' width
-  double height; //canvas' height
+  double width; // canvas' width
+  double height; // canvas' height
   int backGroundColor;
   List<PathPoints> pathPoints;
 
-  MyPaths({this.width, this.height, this.backGroundColor, this.pathPoints});
+  MyPaths({
+    this.width = 0.0,
+    this.height = 0.0,
+    this.backGroundColor = 0xFFFFFFFF,
+    List<PathPoints>? pathPoints,
+  }) : pathPoints = pathPoints ?? <PathPoints>[];
 
-  Map<String, dynamic> toJson() =>
-      {
-        'width' : width,
-        'height' : height,
-        'backGroundColor' : backGroundColor,
-        'pathPoints' : pathPoints,
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'width': width,
+        'height': height,
+        'backGroundColor': backGroundColor,
+        'pathPoints': pathPoints,
       };
 
-  factory MyPaths.fromJson(Map<String, dynamic> parsedJson)
-  {
-    List<PathPoints> pathPoints;
-    if (parsedJson['pathPoints'].toString()!=null) {
-      var list = parsedJson['pathPoints'] as List;
-      pathPoints = list.map((i) => PathPoints.fromJson(i)).toList();
+  factory MyPaths.fromJson(Map<String, dynamic> parsedJson) {
+    final rawList = parsedJson['pathPoints'];
+
+    final List<PathPoints> points;
+    if (rawList is List) {
+      points = rawList
+          .map((i) => PathPoints.fromJson(Map<String, dynamic>.from(i as Map)))
+          .toList();
     } else {
-      pathPoints = new List<PathPoints>();
+      points = <PathPoints>[];
     }
 
-  return MyPaths(
-    width: parsedJson["width"],
-    height: parsedJson["height"],
-    backGroundColor: parsedJson["backGroundColor"],
-    pathPoints: pathPoints,
-  );
+    return MyPaths(
+      width: (parsedJson['width'] as num?)?.toDouble() ?? 0.0,
+      height: (parsedJson['height'] as num?)?.toDouble() ?? 0.0,
+      backGroundColor: parsedJson['backGroundColor'] as int? ?? 0xFFFFFFFF,
+      pathPoints: points,
+    );
   }
 }
