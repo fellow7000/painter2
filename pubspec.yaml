@@ -1,13 +1,14 @@
+#2026-02-16 Migration to Dart 3 sound null-safety
 name: painter2
 description: A fork of the original painter plugin that adds some missing functionality.
-version: 1.0.3
+version: 1.1.0
 homepage: https://github.com/ja2375/painter2
 
 environment:
-  sdk: ">=2.17.0 <4.0.0"
+  sdk: ">=3.0.0 <4.0.0"
   flutter: ">=3.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  date_format: ^2.0.2
+  date_format: ^2.0.9

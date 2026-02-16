@@ -234,7 +234,7 @@ class _PathHistory {
       lineToX: <double>[],
       lineToY: <double>[],
       lineThicknes: currentPaint.strokeWidth,
-      lineColor: currentPaint.color.value,
+      lineColor: currentPaint.color.toARGB32(),
       paintingStyle: currentPaint.style.toString(),
       singlePoint: true,
     );
@@ -389,7 +389,7 @@ class PainterController extends ChangeNotifier {
     _pathHistory._myPaths.pathPoints = getPathPoints();
     _pathHistory._myPaths.width = _pathHistory._width;
     _pathHistory._myPaths.height = _pathHistory._height;
-    _pathHistory._myPaths.backGroundColor = _pathHistory.backgroundColor.value;
+    _pathHistory._myPaths.backGroundColor = _pathHistory.backgroundColor.toARGB32();
     return _pathHistory._myPaths;
   }
 
